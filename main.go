@@ -2,57 +2,76 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"net/http"
-	url2 "net/url"
+	"net/url"
 
 	"github.com/gorilla/mux"
-	"go.uber.org/zap"
 )
 
-func main() {
-	CreateServer()
-}
-
-func CreateServer() {
+func CreateProxyServer() {
 	router := mux.NewRouter()
-	router.PathPrefix("/").HandlerFunc(HandleProxy)
-	fmt.Println("Starting proxy server on port 8080")
-	err := http.ListenAndServe(":8080", router)
+	router.PathPrefix("/").HandlerFunc(handleProxy)
+	fmt.Println("Proxy-сервер запущен на порту 8081")
+	err := http.ListenAndServe(":8081", router)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal("Ошибка при запуске сервера:", err)
 	}
 }
 
-func HandleProxy(w http.ResponseWriter, r *http.Request) {
-	logger := CreateLogger()
-	logger.Info(r)
-	url, err := url2.Parse(r.RequestURI)
-	if err != nil {
-		logger.Error(err)
-	}
-	logger.Info("Proxying request to URL: ", url.String()[0:len(url.String())])
-	client := &http.Client{}
-	proxyReq, err := http.NewRequest(r.Method, url.String()[0:len(url.String())], r.Body)
-	if err != nil {
-		logger.Error("Failed to create request:")
-		logger.Error(err)
+func handleProxy(w http.ResponseWriter, r *http.Request) {
+	targetURL := r.RequestURI
+	if targetURL == "" {
+		http.Error(w, "Целевой URL не указан", http.StatusBadRequest)
+		return
 	}
 
-	proxyReq.Header = r.Header
-	resp, err := client.Do(proxyReq)
+	parsedTargetUrl, err := url.Parse(targetURL)
 	if err != nil {
-		logger.Error("Failed to do request:")
-		logger.Error(err)
+		http.Error(w, "Неправильный URL", http.StatusBadRequest)
+		return
+	}
+
+	req, err := http.NewRequest(r.Method, targetURL, r.Body)
+	if err != nil {
+		http.Error(w, "Ошибка при создании запроса", http.StatusInternalServerError)
+		log.Println("Ошибка при создании запроса:", err)
+		return
+	}
+
+	req.Header = r.Header.Clone()
+	req.Host = parsedTargetUrl.Host
+
+	req.Header.Del("Proxy-Connection")
+
+	client := &http.Client{
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		http.Error(w, "Ошибка при отправке запроса на целевой сервер", http.StatusBadGateway)
+		log.Println("Ошибка при отправке запроса на сервер:", err)
+		return
 	}
 	defer resp.Body.Close()
 
-	//fmt.Println(resp)
+	for key, values := range resp.Header {
+		for _, value := range values {
+			w.Header().Add(key, value)
+		}
+	}
+
+	w.WriteHeader(resp.StatusCode)
+
+	_, err = io.Copy(w, resp.Body)
+	if err != nil {
+		log.Println("Ошибка при отправке ответа клиенту:", err)
+	}
 }
 
-func CreateLogger() *zap.SugaredLogger {
-	logger, _ := zap.NewDevelopment()
-	defer logger.Sync()
-	sugar := logger.Sugar()
-	return sugar
+func main() {
+	CreateProxyServer()
 }
