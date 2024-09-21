@@ -43,7 +43,7 @@ func handleProxy(w http.ResponseWriter, r *http.Request) {
 
 	req.Header = r.Header.Clone()
 	req.Host = parsedTargetUrl.Host
-	req.URL.Scheme = parsedTargetUrl.Host
+	req.URL.Scheme = parsedTargetUrl.Scheme
 	req.URL.Host = parsedTargetUrl.Host
 
 	req.Header.Del("Proxy-Connection")
