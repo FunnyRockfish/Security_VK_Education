@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/gorilla/mux"
 )
@@ -13,17 +14,17 @@ import (
 func CreateProxyServer() {
 	router := mux.NewRouter()
 	router.PathPrefix("/").HandlerFunc(handleProxy)
-	fmt.Println("Proxy-сервер запущен на порту 8081")
-	err := http.ListenAndServe(":8081", router)
+	fmt.Println("Proxy-сервер запущен на порту 8080")
+	err := http.ListenAndServe(":8080", router)
 	if err != nil {
 		log.Fatal("Ошибка при запуске сервера:", err)
 	}
 }
 
 func handleProxy(w http.ResponseWriter, r *http.Request) {
-	targetURL := r.RequestURI
-	if targetURL == "" {
-		http.Error(w, "Целевой URL не указан", http.StatusBadRequest)
+	targetURL := r.URL.String()
+	if !strings.HasPrefix(targetURL, "http") {
+		http.Error(w, "Целевой URL должен начинаться с http", http.StatusBadRequest)
 		return
 	}
 
@@ -33,7 +34,7 @@ func handleProxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	req, err := http.NewRequest(r.Method, targetURL, r.Body)
+	req, err := http.NewRequest(r.Method, parsedTargetUrl.RequestURI(), r.Body)
 	if err != nil {
 		http.Error(w, "Ошибка при создании запроса", http.StatusInternalServerError)
 		log.Println("Ошибка при создании запроса:", err)
@@ -42,6 +43,8 @@ func handleProxy(w http.ResponseWriter, r *http.Request) {
 
 	req.Header = r.Header.Clone()
 	req.Host = parsedTargetUrl.Host
+	req.URL.Scheme = parsedTargetUrl.Host
+	req.URL.Host = parsedTargetUrl.Host
 
 	req.Header.Del("Proxy-Connection")
 
