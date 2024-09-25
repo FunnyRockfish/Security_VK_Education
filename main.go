@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log"
@@ -17,12 +18,13 @@ import (
 
 	db "Security_VK_Education/database"
 	"Security_VK_Education/domain"
+	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
 func main() {
-	db := db.ConnectToMongoDataBase()
-	CreateProxyServer(db)
+	database := db.ConnectToMongoDataBase()
+	go CreateProxyServer(database)
 }
 
 func CreateProxyServer(db *mongo.Database) {
@@ -55,7 +57,17 @@ func handleProxy(w http.ResponseWriter, r *http.Request, database *mongo.Databas
 }
 
 func handleHTTP(w http.ResponseWriter, r *http.Request, database *mongo.Database) {
-	request := domain.Request{}
+	request := domain.Request{
+		Method:     r.Method,
+		Path:       r.URL.Path,
+		GetParams:  r.URL.Query(),
+		Headers:    r.Header,
+		Cookies:    r.Cookies(),
+		PostParams: r.PostForm,
+	}
+	fmt.Println("REQUEST: ", request)
+	PutItemToDatabase(database, request, "request")
+
 	targetURL := r.URL.String()
 	if !strings.HasPrefix(targetURL, "http") {
 		http.Error(w, "Целевой URL должен начинаться с http", http.StatusBadRequest)
@@ -186,5 +198,50 @@ func genCertificate(scriptPath, host string, serialNumber int64) error {
 }
 
 func PutItemToDatabase(db *mongo.Database, item interface{}, itemType string) {
+	var collection *mongo.Collection
 
+	switch itemType {
+	case "request":
+		collection = db.Collection("request")
+	case "response":
+		collection = db.Collection("response")
+	default:
+		log.Println("Неизвестный тип элемента:", itemType)
+		return
+	}
+
+	_, err := collection.InsertOne(context.TODO(), item)
+	if err != nil {
+		log.Println("Ошибка при добавлении элемента в базу данных:", err)
+	} else {
+		log.Println("Элемент успешно сохранен в базу данных")
+	}
+}
+
+func getAllRequests(database *mongo.Database) {
+	collection := database.Collection("request")
+	cursor, err := collection.Find(context.TODO(), bson.D{})
+	if err != nil {
+		log.Fatal("Ошибка при получении документов:", err)
+	}
+	defer cursor.Close(context.TODO())
+
+	for cursor.Next(context.TODO()) {
+		var document bson.M
+		err = cursor.Decode(&document)
+		if err != nil {
+			log.Println("Ошибка при декодировании документа:", err)
+		}
+		if id, ok := document["_id"]; ok {
+			fmt.Print("ID: ", id)
+		} else {
+			fmt.Println("id отсутствует!")
+		}
+
+		for key, value := range document {
+			if key != "_id" {
+				fmt.Printf("%s: %v\n", key, value)
+			}
+		}
+	}
 }
