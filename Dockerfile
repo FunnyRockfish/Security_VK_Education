@@ -1,11 +1,23 @@
-# Используем официальный образ MongoDB
-FROM mongo:latest
+# 1. Используем официальный образ Go
+FROM golang:1.21-alpine
 
-# Задаем переменные окружения (не обязательно)
-ENV MONGO_INITDB_ROOT_USERNAME=FunnyRockfish
-ENV MONGO_INITDB_ROOT_PASSWORD=homework3
+# 2. Устанавливаем нужные утилиты и зависимости
+RUN apk add --no-cache bash ca-certificates git mongodb-tools
 
-EXPOSE 27017
+# 3. Создаем рабочую директорию в контейнере
+WORKDIR /app
 
-# Команда запуска MongoDB
-CMD ["mongod"]
+# 4. Копируем go.mod и go.sum для загрузки зависимостей
+COPY go.mod go.sum ./
+
+# 5. Загружаем зависимости
+RUN go mod download
+
+# 6. Копируем весь код проекта в рабочую директорию
+COPY . .
+
+# 7. Компилируем Go-приложение
+RUN go build -o proxyserver ./cmd
+
+# 8. Команда для запуска вашего прокси-сервера
+CMD ["./proxyserver"]

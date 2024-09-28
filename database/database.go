@@ -10,7 +10,7 @@ import (
 
 func ConnectToMongoDataBase() *mongo.Database {
 	ctx := context.TODO()
-	clientOptions := options.Client().ApplyURI("mongodb://FunnyRockfish:homework3@localhost:27017")
+	clientOptions := options.Client().ApplyURI("mongodb://FunnyRockfish:homework3@mongo:27017")
 	client, err := mongo.Connect(ctx, clientOptions)
 	if err != nil {
 		log.Fatal("DataBase connect err:", err)
@@ -24,4 +24,5 @@ func ConnectToMongoDataBase() *mongo.Database {
 
 	database := client.Database("task3")
 	return database
+
 }

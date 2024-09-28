@@ -9,8 +9,8 @@ import (
 	"github.com/gorilla/mux"
 	"go.mongodb.org/mongo-driver/mongo"
 	"hw2/database"
+	rest "hw2/internal/REST"
 	p "hw2/internal/proxy"
-	"hw2/internal/rest"
 )
 
 func main() {
