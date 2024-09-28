@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   app:
-    image: hw3
+    image: funny_proxy
     build:
       context: .
       dockerfile: Dockerfile
@@ -12,15 +12,15 @@ services:
     depends_on:
       - mongo
     environment:
-      - MONGO_URI=mongodb://FunnyRockfish:homework3@mongo:27017
+      - MONGO_URI=mongodb://FunnyRockfish:homework3@localhost:27017
 
   mongo:
     image: mongo:latest
     container_name: mongo
     restart: always
     environment:
-      MONGO_INITDB_ROOT_USERNAME: FunnyRockfish # Замените на свой логин
-      MONGO_INITDB_ROOT_PASSWORD: homework3 # Замените на свой пароль
+      MONGO_INITDB_ROOT_USERNAME: FunnyRockfish
+      MONGO_INITDB_ROOT_PASSWORD: homework3
     ports:
       - "27017:27017"
     volumes:

@@ -25,7 +25,6 @@ import (
 	"hw2/domain"
 )
 
-// Структура для хранения параметров ответа
 type ParsedResponse struct {
 	Code    int               `bson:"code"`
 	Message string            `bson:"message"`
@@ -45,21 +44,19 @@ func NewProxyStorage(db *mongo.Database) *ProxyStorage {
 
 func (p *ProxyStorage) HandleProxy(w http.ResponseWriter, r *http.Request) {
 	log.Printf("(proxy-server) Received request method: %s, host: %s, URL: %s", r.Method, r.Host, r.URL.String())
-	// Определяем, является ли запрос CONNECT (для HTTPS)
 	if r.Method == http.MethodConnect {
-		p.handleHTTPS(w, r) // Вызов функции для обработки HTTPS-запросов
+		p.handleHTTPS(w, r)
 	} else {
-		p.handleHTTP(w, r) // Вызов функции для обработки HTTP-запросов
+		p.handleHTTP(w, r)
 	}
 }
 
-// Обработка HTTPS-запросов
 func (p *ProxyStorage) handleHTTPS(w http.ResponseWriter, r *http.Request) {
 	log.Printf("(proxy-server) Handling HTTPS request: %s, host: %s, URL: %s", r.Method, r.Host, r.URL.String())
 
 	hostPort := r.Host
 	if !strings.Contains(hostPort, ":") {
-		hostPort += ":443" // Добавляем порт по умолчанию
+		hostPort += ":443"
 	}
 	host, _, err := net.SplitHostPort(hostPort)
 
@@ -134,7 +131,6 @@ func (p *ProxyStorage) handleHTTPS(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tlsServerConn.Close()
 
-	// Парсинг запроса клиента
 	clientReader := bufio.NewReader(tlsClientConn)
 	req, err := http.ReadRequest(clientReader)
 	if err != nil {
@@ -143,14 +139,12 @@ func (p *ProxyStorage) handleHTTPS(w http.ResponseWriter, r *http.Request) {
 	}
 	parsedReq := parseRequest(req)
 
-	// Отправка запроса на сервер
 	err = req.Write(tlsServerConn)
 	if err != nil {
 		log.Println("(proxy-server) Failed to forward request to server:", err)
 		return
 	}
 
-	// Парсинг ответа от сервера
 	serverReader := bufio.NewReader(tlsServerConn)
 	resp, err := http.ReadResponse(serverReader, req)
 	if err != nil {
@@ -158,17 +152,15 @@ func (p *ProxyStorage) handleHTTPS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer resp.Body.Close()
-
 	parsedResp := parseResponse(resp)
 
-	// Сохранение запроса и ответа в базе данных
+	log.Println("put to database")
 	p.saveRequestResponse(parsedReq, parsedResp)
 
-	// Отправка ответа клиенту
+	log.Println("send response to client")
 	resp.Write(tlsClientConn)
 }
 
-// Функция для парсинга HTTP-запроса
 func parseRequest(r *http.Request) domain.Request {
 	getParams := make(map[string]string)
 	for key, values := range r.URL.Query() {
@@ -209,12 +201,10 @@ func parseRequest(r *http.Request) domain.Request {
 	}
 }
 
-// Функция для парсинга HTTP-ответа
 func parseResponse(resp *http.Response) domain.Response {
 	bodyBytes, _ := io.ReadAll(resp.Body)
 	resp.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 
-	// Распаковка gzip, если это необходимо
 	if resp.Header.Get("Content-Encoding") == "gzip" {
 		bodyBytes, _ = decodeGzip(bodyBytes)
 	}
@@ -232,7 +222,6 @@ func parseResponse(resp *http.Response) domain.Response {
 	}
 }
 
-// Сохранение запроса и ответа в базе данных
 func (p *ProxyStorage) saveRequestResponse(req domain.Request, resp domain.Response) {
 	fmt.Println("REQ:", req)
 	fmt.Println("RESP:", resp)
@@ -250,9 +239,7 @@ func (p *ProxyStorage) saveRequestResponse(req domain.Request, resp domain.Respo
 	}
 }
 
-// Обработка HTTP-запросов
 func (p *ProxyStorage) handleHTTP(w http.ResponseWriter, r *http.Request) {
-	// Логируем запрос
 	log.Printf("(proxy-server) Handling HTTP request: %s, host: %s, URL: %s", r.Method, r.Host, r.URL.String())
 
 	uri, err := url.Parse(r.RequestURI)
@@ -302,9 +289,6 @@ func (p *ProxyStorage) handleHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer resp.Body.Close()
-
-	//storeRequest(r, resp)
-
 	PutItemToDatabase(p.db, r, resp)
 
 	for header, values := range resp.Header {
@@ -317,41 +301,35 @@ func (p *ProxyStorage) handleHTTP(w http.ResponseWriter, r *http.Request) {
 	io.Copy(w, resp.Body)
 }
 
-// Функция для сохранения запроса и ответа в MongoDB
 func storeRequest(r *http.Request, resp *http.Response) domain.ReqResp {
-	// Парсинг GET параметров
 	queryParams := r.URL.Query()
 	getParams := make(map[string]string)
 	for key, values := range queryParams {
-		getParams[key] = values[0] // Берем первое значение, если параметр встречается несколько раз
+		getParams[key] = values[0]
 	}
 
-	// Парсинг POST параметров
 	postParams := make(map[string]string)
-	bodyBytes, err := io.ReadAll(r.Body) // Считываем тело запроса
+	bodyBytes, err := io.ReadAll(r.Body)
 	if err == nil {
 		r.Body = io.NopCloser(strings.NewReader(string(bodyBytes))) // Восстанавливаем r.Body для последующего использования
 	}
 
 	if r.Method == "POST" || r.Method == "PUT" {
-		// Если тип данных - application/x-www-form-urlencoded, парсим форму
 		if r.Header.Get("Content-Type") == "application/x-www-form-urlencoded" {
 			err := r.ParseForm()
 			if err == nil {
 				for key, values := range r.PostForm {
-					postParams[key] = values[0] // Берем первое значение
+					postParams[key] = values[0]
 				}
 			}
 		}
 	}
 
-	// Парсинг заголовков
 	headers := make(map[string]string)
 	for name, values := range r.Header {
-		headers[name] = strings.Join(values, ", ") // Объединяем несколько значений заголовка в одну строку
+		headers[name] = strings.Join(values, ", ")
 	}
 
-	// Парсинг Cookie
 	cookieParams := make(map[string]string)
 	for _, cookie := range r.Cookies() {
 		cookieParams[cookie.Name] = cookie.Value
@@ -364,22 +342,19 @@ func storeRequest(r *http.Request, resp *http.Response) domain.ReqResp {
 		Headers:    headers,
 		Cookies:    cookieParams,
 		PostParams: postParams,
-		Body:       string(bodyBytes), // Сохраняем тело запроса
+		Body:       string(bodyBytes),
 	}
 
 	parsedResp := domain.Response{}
 	if resp != nil {
-		// Парсинг заголовков ответа
 		responseHeaders := make(map[string]string)
 		for name, values := range resp.Header {
 			responseHeaders[name] = strings.Join(values, ", ")
 		}
 
-		// Обрабатываем сжатие
 		bodyBytes, _ := io.ReadAll(resp.Body)
-		resp.Body = io.NopCloser(strings.NewReader(string(bodyBytes))) // Восстанавливаем тело ответа для последующего использования
+		resp.Body = io.NopCloser(strings.NewReader(string(bodyBytes)))
 
-		// Декодируем тело, если оно сжато (gzip, deflate и т.д.)
 		if resp.Header.Get("Content-Encoding") == "gzip" {
 			bodyBytes, err = decodeGzip(bodyBytes)
 			if err != nil {
@@ -387,17 +362,14 @@ func storeRequest(r *http.Request, resp *http.Response) domain.ReqResp {
 			}
 		}
 
-		//bodyString := string(bodyBytes)
-
 		parsedResp = domain.Response{
 			Code:    resp.StatusCode,
 			Message: resp.Status,
 			Headers: responseHeaders,
-			//Body:    bodyString,
+			Body:    ensureValidUTF8(string(bodyBytes)),
 		}
 	}
 
-	// Сохраняем запрос и ответ в MongoDB
 	storedReq := domain.ReqResp{
 		Req:  parsedReq,
 		Resp: parsedResp,
@@ -412,36 +384,30 @@ func (p *ProxyStorage) RepeatRequest(reqId string) *http.Response {
 	client := &http.Client{
 		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: true, // Отключаем проверку сертификатов для HTTPS-запросов
+				InsecureSkipVerify: true,
 			},
 		},
 	}
 
-	// Извлекаем протокол из Referer, если он указан
 	referer := req.Headers["Referer"]
 	var completeURL string
 	if referer != "" {
 		parsedURL, err := url.Parse(referer)
 		if err == nil && parsedURL.Scheme != "" {
-			// Строим полный URL запроса с использованием схемы и хоста из Referer
 			completeURL = fmt.Sprintf("%s://%s%s", parsedURL.Scheme, parsedURL.Host, req.Path)
 		} else {
-			// Если не удалось разобрать Referer, используем http по умолчанию
 			completeURL = "http://" + req.Path
 		}
 	} else {
-		// Если Referer отсутствует, используем http по умолчанию
 		completeURL = "http://" + req.Path
 	}
 
-	// Формируем новый HTTP-запрос
 	httpReq, err := http.NewRequest(req.Method, completeURL, strings.NewReader(req.Body)) // Добавляем тело запроса, если оно есть
 	if err != nil {
 		fmt.Println(err)
 		return nil
 	}
 
-	// Добавляем заголовки и куки
 	for header, value := range req.Headers {
 		httpReq.Header.Add(header, value)
 	}
@@ -449,12 +415,6 @@ func (p *ProxyStorage) RepeatRequest(reqId string) *http.Response {
 		httpReq.AddCookie(&http.Cookie{Name: cookie, Value: value})
 	}
 
-	fmt.Println()
-	fmt.Println()
-	fmt.Println()
-
-	// Отправляем запрос
-	fmt.Println(httpReq)
 	resp, err := client.Do(httpReq)
 	if err != nil {
 		fmt.Println(err)
@@ -486,7 +446,6 @@ func getRequest(db *mongo.Database, id string) domain.Request {
 	return result.Req
 }
 
-// Функция для декодирования gzip
 func decodeGzip(data []byte) ([]byte, error) {
 	reader, err := gzip.NewReader(bytes.NewReader(data))
 	if err != nil {

@@ -87,7 +87,6 @@ func (rh *RequestHandler) HandleRequestByID(w http.ResponseWriter, r *http.Reque
 	}
 }
 
-// Повторная отправка запроса
 func (rh *RequestHandler) HandleRepeatRequest(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	idStr := vars["id"]

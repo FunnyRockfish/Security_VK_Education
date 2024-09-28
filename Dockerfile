@@ -1,23 +1,41 @@
-# 1. Используем официальный образ Go
-FROM golang:1.21-alpine
+# 1. Используем официальный образ Go для сборки
+FROM golang:1.21-alpine AS build-stage
 
-# 2. Устанавливаем нужные утилиты и зависимости
-RUN apk add --no-cache bash ca-certificates git mongodb-tools
-
-# 3. Создаем рабочую директорию в контейнере
+# Создаем рабочую директорию в контейнере
 WORKDIR /app
 
-# 4. Копируем go.mod и go.sum для загрузки зависимостей
-COPY go.mod go.sum ./
+# Устанавливаем необходимые утилиты
+RUN apk update && apk add --no-cache git bash build-base
 
-# 5. Загружаем зависимости
-RUN go mod download
+# Устанавливаем переменные окружения для кэширования модулей Go
+ENV GOMODCACHE /go/pkg/mod
+ENV GOCACHE /go-cache
 
-# 6. Копируем весь код проекта в рабочую директорию
+# Копируем исходный код и файлы конфигурации из локальной системы
 COPY . .
 
-# 7. Компилируем Go-приложение
-RUN go build -o proxyserver ./cmd
+# Загружаем зависимости
+RUN go mod download
 
-# 8. Команда для запуска вашего прокси-сервера
-CMD ["./proxyserver"]
+# Компилируем Go-приложение
+RUN CGO_ENABLED=0 go build -o /app/proxyserver ./cmd/main.go  # Проверьте, что путь к main.go правильный
+
+# Устанавливаем права доступа к сертификатам на этапе сборки
+RUN chmod 644 /app/cmd/certs/ca.crt /app/cmd/certs/ca.key
+
+# Финальный этап с минимальным образом
+FROM gcr.io/distroless/base-debian11 AS build-release-stage
+
+# Устанавливаем рабочую директорию для запуска приложения
+WORKDIR /app
+
+# Копируем исполняемый файл и сертификаты из стадии сборки
+COPY --from=build-stage /app/proxyserver /app/proxyserver
+COPY --from=build-stage /app/cmd/certs /app/certs
+
+
+# Открываем порты
+EXPOSE 8000 8080
+
+# Запуск исполняемого файла
+CMD ["/app/proxyserver"]
